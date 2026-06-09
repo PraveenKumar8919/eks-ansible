@@ -1,0 +1,106 @@
+// =============================================================
+// LOG COLLECTION: Discover all pods and ship logs to Loki
+// =============================================================
+
+discovery.kubernetes "pods" {
+  role = "pod"
+}
+
+discovery.relabel "pod_logs" {
+  targets = discovery.kubernetes.pods.targets
+
+  // Route each log stream to the node running that pod (required for DaemonSet)
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    target_label  = "__host__"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "app"
+  }
+}
+
+loki.source.kubernetes "pod_logs" {
+  targets    = discovery.relabel.pod_logs.output
+  forward_to = [loki.write.loki_endpoint.receiver]
+}
+
+loki.write "loki_endpoint" {
+  endpoint {
+    url = "http://loki.loki-live.svc.cluster.local:3100/loki/api/v1/push"
+  }
+}
+
+// =============================================================
+// METRIC COLLECTION: Scrape annotated pods, send to Prometheus
+// Pods must have annotation: prometheus.io/scrape: "true"
+// =============================================================
+
+discovery.kubernetes "metrics_pods" {
+  role = "pod"
+}
+
+discovery.relabel "metrics" {
+  targets = discovery.kubernetes.metrics_pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+    action        = "keep"
+    regex         = "true"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+    target_label  = "__metrics_path__"
+    regex         = "(.+)"
+  }
+
+  rule {
+    source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+    target_label  = "__address__"
+    regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+    replacement   = "$1:$2"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "app"
+  }
+}
+
+prometheus.scrape "annotated_pods" {
+  targets    = discovery.relabel.metrics.output
+  forward_to = [prometheus.remote_write.prometheus_endpoint.receiver]
+}
+
+prometheus.remote_write "prometheus_endpoint" {
+  endpoint {
+    url = "http://kube-prometheus-stack-prometheus.grafana.svc.cluster.local:9090/api/v1/write"
+  }
+}

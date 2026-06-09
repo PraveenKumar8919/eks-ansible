@@ -1,0 +1,20 @@
+---
+- name: Add Grafana Helm repo
+  kubernetes.core.helm_repository:
+    name: grafana
+    repo_url: https://grafana.github.io/helm-charts
+
+- name: Install Grafana Alloy (DaemonSet — collects logs + metrics)
+  kubernetes.core.helm:
+    name: alloy
+    chart_ref: grafana/alloy
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    wait: true
+    timeout: "5m"
+    values:
+      alloy:
+        configMap:
+          content: "{{ lookup('file', role_path + '/files/alloy-config.alloy') }}"
+      controller:
+        type: daemonset

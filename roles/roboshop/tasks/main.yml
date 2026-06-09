@@ -1,0 +1,11 @@
+---
+- name: Install Roboshop via local Helm chart
+  kubernetes.core.helm:
+    name: roboshop
+    chart_ref: "{{ role_path }}/files/helm/roboshop"
+    release_namespace: "{{ roboshop_namespace }}"
+    create_namespace: true
+    wait: true
+    timeout: "10m"
+    values:
+      images: "{{ roboshop_images }}"

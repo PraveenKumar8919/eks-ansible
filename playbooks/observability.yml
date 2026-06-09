@@ -1,0 +1,10 @@
+---
+- name: Deploy observability stack (Loki + Prometheus + Grafana + Alloy)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  roles:
+    - role: loki
+    - role: prometheus
+    - role: alloy

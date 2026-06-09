@@ -1,0 +1,51 @@
+---
+- name: Add Grafana Helm repo
+  kubernetes.core.helm_repository:
+    name: grafana
+    repo_url: https://grafana.github.io/helm-charts
+
+- name: Install Loki (SingleBinary, S3 backend)
+  kubernetes.core.helm:
+    name: loki
+    chart_ref: grafana/loki
+    release_namespace: "{{ loki_namespace }}"
+    create_namespace: true
+    wait: true
+    timeout: "5m"
+    values:
+      deploymentMode: SingleBinary
+
+      loki:
+        auth_enabled: false
+        commonConfig:
+          replication_factor: 1
+        storage:
+          type: s3
+          bucketNames:
+            chunks: "{{ loki_s3_bucket }}"
+            ruler:  "{{ loki_s3_bucket }}"
+            admin:  "{{ loki_s3_bucket }}"
+          s3:
+            region: "{{ aws_region }}"
+            s3ForcePathStyle: false
+        schemaConfig:
+          configs:
+            - from: "2024-01-01"
+              store: tsdb
+              object_store: s3
+              schema: v13
+              index:
+                prefix: loki_index_
+                period: 24h
+
+      singleBinary:
+        replicas: 1
+
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ loki_iam_role_arn }}"
+
+      read:    { replicas: 0 }
+      write:   { replicas: 0 }
+      backend: { replicas: 0 }
+      minio:   { enabled: false }

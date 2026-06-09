@@ -1,0 +1,11 @@
+images:
+  catalogue: praveen538/catalogue:v1
+  cart:      praveen538/cart:v1
+  user:      praveen538/user:v1
+  payment:   praveen538/payment:v1
+  shipping:  praveen538/shipping:v1
+  mongodb:   praveen538/mongo:v1
+  mysql:     praveen538/mysql:v1
+  redis:     redis
+  rabbitmq:  rabbitmq
+  web:       praveen538/web:v1

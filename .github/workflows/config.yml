@@ -1,0 +1,100 @@
+name: EKS Configuration (Helm via Ansible)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      loki_iam_role_arn:
+        description: "Loki IAM role ARN (leave blank to read from eks-infra state)"
+        required: false
+      loki_s3_bucket:
+        description: "Loki S3 bucket (leave blank to read from eks-infra state)"
+        required: false
+
+env:
+  AWS_REGION:   us-east-1
+  CLUSTER_NAME: eks-test-cluster
+
+jobs:
+  deploy:
+    name: Ansible Helm Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform (to read eks-infra outputs)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Read eks-infra Terraform outputs
+        id: tf_outputs
+        run: |
+          # Use workflow inputs if provided, otherwise pull from eks-infra S3 state
+          LOKI_ARN="${{ inputs.loki_iam_role_arn }}"
+          LOKI_BUCKET="${{ inputs.loki_s3_bucket }}"
+
+          if [ -z "$LOKI_ARN" ]; then
+            cat > /tmp/backend.tf <<EOF
+          terraform {
+            backend "s3" {
+              bucket       = "${{ secrets.TF_STATE_BUCKET }}"
+              key          = "eks-infra/state.tfstate"
+              region       = "us-east-1"
+              use_lockfile = true
+            }
+          }
+          EOF
+            mkdir /tmp/tfread && cp /tmp/backend.tf /tmp/tfread/
+            terraform -chdir=/tmp/tfread init -reconfigure
+            LOKI_ARN=$(terraform -chdir=/tmp/tfread output -raw loki_iam_role_arn 2>/dev/null || echo "")
+            LOKI_BUCKET=$(terraform -chdir=/tmp/tfread output -raw loki_s3_bucket 2>/dev/null || echo "")
+          fi
+
+          echo "loki_iam_role_arn=$LOKI_ARN"   >> $GITHUB_OUTPUT
+          echo "loki_s3_bucket=$LOKI_BUCKET"   >> $GITHUB_OUTPUT
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install Ansible + Kubernetes dependencies
+        run: |
+          pip install ansible kubernetes
+          ansible-galaxy collection install kubernetes.core
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy observability stack
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          LOKI_S3_BUCKET: ${{ steps.tf_outputs.outputs.loki_s3_bucket }}
+        run: |
+          ansible-playbook playbooks/observability.yml \
+            -e "loki_iam_role_arn=${{ steps.tf_outputs.outputs.loki_iam_role_arn }}" \
+            -e "loki_s3_bucket=${{ steps.tf_outputs.outputs.loki_s3_bucket }}"
+
+      - name: Deploy Roboshop
+        run: ansible-playbook playbooks/roboshop.yml
+
+      - name: Print access URLs
+        run: |
+          echo "=== Grafana ==="
+          kubectl get svc -n grafana kube-prometheus-stack-grafana \
+            -o jsonpath='http://{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+          echo "Credentials: admin / Roboshop@123"
+          echo ""
+          echo "=== Roboshop ==="
+          kubectl get svc -n roboshop web \
+            -o jsonpath='http://{.status.loadBalancer.ingress[0].hostname}{"\n"}'

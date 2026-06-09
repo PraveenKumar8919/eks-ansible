@@ -1,0 +1,8 @@
+---
+- name: Deploy Roboshop application
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  roles:
+    - role: roboshop
