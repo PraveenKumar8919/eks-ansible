@@ -1,0 +1,26 @@
+# HOW TO USE THIS FILE:
+#
+# 1. Copy to group_vars/vault.yml
+#      cp group_vars/vault.yml.example group_vars/vault.yml
+#
+# 2. Fill in your real values below
+#
+# 3. Encrypt the file with Ansible Vault:
+#      ansible-vault encrypt group_vars/vault.yml
+#    (you will be prompted to set a vault password — save this in GitHub secret ANSIBLE_VAULT_PASSWORD)
+#
+# 4. Commit the encrypted vault.yml — it is safe to commit (it's ciphertext, not plaintext)
+#      git add group_vars/vault.yml && git commit -m "add encrypted vault"
+#
+# NEVER commit the plaintext version of vault.yml
+
+vault_grafana_admin_password: "YourGrafanaPassword"
+
+vault_mysql_root_password: "YourMySQLRootPassword"
+vault_mysql_password: "YourMySQLPassword"
+
+vault_rabbitmq_user: "roboshop"
+vault_rabbitmq_password: "YourRabbitMQPassword"
+
+vault_payment_amqp_user: "roboshop"
+vault_payment_amqp_pass: "YourAMQPPassword"

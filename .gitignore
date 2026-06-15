@@ -1,0 +1,3 @@
+# Never commit plaintext vault — only the ansible-vault encrypted version is safe to commit
+group_vars/vault.yml.plain
+*.vault.plain

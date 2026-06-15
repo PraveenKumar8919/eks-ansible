@@ -97,9 +97,13 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
+      - name: Write vault password file
+        run: |
+          echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > /tmp/.vault_pass
+          chmod 600 /tmp/.vault_pass
+
       - name: Deploy observability stack
         env:
-          GRAFANA_ADMIN_PASSWORD:  ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           LOKI_S3_BUCKET:          ${{ steps.tf.outputs.LOKI_S3_BUCKET }}
           VPC_ID:                  ${{ steps.tf.outputs.VPC_ID }}
           ACM_CERT_ARN:            ${{ steps.tf.outputs.ACM_CERT_ARN }}
@@ -107,10 +111,17 @@ jobs:
           EXTERNALDNS_ROLE_ARN:    ${{ steps.tf.outputs.EXTERNALDNS_ROLE_ARN }}
         run: |
           ansible-playbook playbooks/observability.yml \
+            --vault-password-file /tmp/.vault_pass \
             -e "loki_iam_role_arn=${{ steps.tf.outputs.LOKI_IAM_ROLE_ARN }}"
 
       - name: Deploy Roboshop
-        run: ansible-playbook playbooks/roboshop.yml
+        run: |
+          ansible-playbook playbooks/roboshop.yml \
+            --vault-password-file /tmp/.vault_pass
+
+      - name: Remove vault password file
+        if: always()
+        run: rm -f /tmp/.vault_pass
 
       - name: Print access URLs
         run: |

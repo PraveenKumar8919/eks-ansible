@@ -4,9 +4,9 @@ metadata:
   name: payment
   namespace: roboshop
 type: Opaque
-data:
-  AMQP_USER: cm9ib3Nob3A=
-  AMQP_PASS: cm9ib3Nob3AxMjM=
+stringData:
+  AMQP_USER: {{ .Values.secrets.payment.amqpUser | quote }}
+  AMQP_PASS: {{ .Values.secrets.payment.amqpPass | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment

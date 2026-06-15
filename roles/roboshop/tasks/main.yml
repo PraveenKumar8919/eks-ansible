@@ -9,3 +9,13 @@
     timeout: "10m"
     values:
       images: "{{ roboshop_images }}"
+      secrets:
+        mysql:
+          rootPassword: "{{ mysql_root_password }}"
+          password:     "{{ mysql_password }}"
+        rabbitmq:
+          user:     "{{ rabbitmq_user }}"
+          password: "{{ rabbitmq_password }}"
+        payment:
+          amqpUser: "{{ payment_amqp_user }}"
+          amqpPass: "{{ payment_amqp_pass }}"

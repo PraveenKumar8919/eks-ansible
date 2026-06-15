@@ -13,9 +13,9 @@ metadata:
   name: mysql
   namespace: roboshop
 type: Opaque
-data:
-  MYSQL_ROOT_PASSWORD: "Um9ib1Nob3BAMQ=="
-  MYSQL_PASSWORD: "Um9ib1Nob3BAMQ=="
+stringData:
+  MYSQL_ROOT_PASSWORD: {{ .Values.secrets.mysql.rootPassword | quote }}
+  MYSQL_PASSWORD:      {{ .Values.secrets.mysql.password | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment

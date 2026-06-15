@@ -11,16 +11,26 @@ roboshop_namespace:   roboshop
 # Domain
 domain_name: devopswithpraveen.online
 
-# Grafana
-grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('changeme', true) }}"
+# Secrets — values come from group_vars/vault.yml (ansible-vault encrypted)
+# Never hardcode secrets here — reference vault variables only
+grafana_admin_password: "{{ vault_grafana_admin_password }}"
 
-# Injected at runtime from terraform outputs (via GitHub Actions or -e flag locally)
-loki_s3_bucket:             "{{ lookup('env', 'LOKI_S3_BUCKET') | default('', true) }}"
-loki_iam_role_arn:          ""
-vpc_id:                     "{{ lookup('env', 'VPC_ID') | default('', true) }}"
-acm_certificate_arn:        "{{ lookup('env', 'ACM_CERT_ARN') | default('', true) }}"
+mysql_root_password: "{{ vault_mysql_root_password }}"
+mysql_password:      "{{ vault_mysql_password }}"
+
+rabbitmq_user:     "{{ vault_rabbitmq_user }}"
+rabbitmq_password: "{{ vault_rabbitmq_password }}"
+
+payment_amqp_user: "{{ vault_payment_amqp_user }}"
+payment_amqp_pass: "{{ vault_payment_amqp_pass }}"
+
+# Infrastructure values — injected at runtime from terraform outputs (not secrets)
+loki_s3_bucket:              "{{ lookup('env', 'LOKI_S3_BUCKET') | default('', true) }}"
+loki_iam_role_arn:           ""
+vpc_id:                      "{{ lookup('env', 'VPC_ID') | default('', true) }}"
+acm_certificate_arn:         "{{ lookup('env', 'ACM_CERT_ARN') | default('', true) }}"
 alb_controller_iam_role_arn: "{{ lookup('env', 'ALB_CONTROLLER_ROLE_ARN') | default('', true) }}"
-externaldns_iam_role_arn:   "{{ lookup('env', 'EXTERNALDNS_ROLE_ARN') | default('', true) }}"
+externaldns_iam_role_arn:    "{{ lookup('env', 'EXTERNALDNS_ROLE_ARN') | default('', true) }}"
 
 # Roboshop image tags
 roboshop_images:

@@ -9,3 +9,15 @@ images:
   redis:     redis
   rabbitmq:  rabbitmq
   web:       praveen538/web:v1
+
+# Secrets are passed at deploy time from Ansible vault — never hardcode values here
+secrets:
+  mysql:
+    rootPassword: ""
+    password: ""
+  rabbitmq:
+    user: ""
+    password: ""
+  payment:
+    amqpUser: ""
+    amqpPass: ""
