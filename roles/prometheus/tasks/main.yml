@@ -16,7 +16,20 @@
       grafana:
         adminPassword: "{{ grafana_admin_password }}"
         service:
-          type: LoadBalancer
+          type: ClusterIP
+        ingress:
+          enabled: true
+          ingressClassName: alb
+          annotations:
+            alb.ingress.kubernetes.io/scheme: internet-facing
+            alb.ingress.kubernetes.io/target-type: ip
+            alb.ingress.kubernetes.io/group.name: observability
+            alb.ingress.kubernetes.io/certificate-arn: "{{ acm_certificate_arn }}"
+            alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+            alb.ingress.kubernetes.io/ssl-redirect: "443"
+            external-dns.alpha.kubernetes.io/hostname: "grafana.{{ domain_name }}"
+          hosts:
+            - "grafana.{{ domain_name }}"
         additionalDataSources:
           - name: Loki
             type: loki
@@ -27,3 +40,16 @@
       prometheus:
         prometheusSpec:
           enableRemoteWriteReceiver: true
+        ingress:
+          enabled: true
+          ingressClassName: alb
+          annotations:
+            alb.ingress.kubernetes.io/scheme: internet-facing
+            alb.ingress.kubernetes.io/target-type: ip
+            alb.ingress.kubernetes.io/group.name: observability
+            alb.ingress.kubernetes.io/certificate-arn: "{{ acm_certificate_arn }}"
+            alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+            alb.ingress.kubernetes.io/ssl-redirect: "443"
+            external-dns.alpha.kubernetes.io/hostname: "prometheus.{{ domain_name }}"
+          hosts:
+            - "prometheus.{{ domain_name }}"

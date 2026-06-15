@@ -1,10 +1,12 @@
 ---
-- name: Deploy observability stack (Loki + Prometheus + Grafana + Alloy)
+- name: Deploy observability stack
   hosts: localhost
   connection: local
   gather_facts: false
 
   roles:
-    - role: loki
-    - role: prometheus
-    - role: alloy
+    - role: aws-load-balancer-controller  # must run first — creates the ALB
+    - role: external-dns                  # watches Ingress, creates Route 53 records
+    - role: loki                          # log storage (S3 backend)
+    - role: prometheus                    # metrics + Grafana dashboards
+    - role: alloy                         # DaemonSet — collects logs + metrics

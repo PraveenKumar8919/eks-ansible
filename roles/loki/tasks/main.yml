@@ -49,3 +49,34 @@
       write:   { replicas: 0 }
       backend: { replicas: 0 }
       minio:   { enabled: false }
+
+- name: Create Loki Ingress
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: loki
+        namespace: "{{ loki_namespace }}"
+        annotations:
+          kubernetes.io/ingress.class: alb
+          alb.ingress.kubernetes.io/scheme: internet-facing
+          alb.ingress.kubernetes.io/target-type: ip
+          alb.ingress.kubernetes.io/group.name: observability
+          alb.ingress.kubernetes.io/certificate-arn: "{{ acm_certificate_arn }}"
+          alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+          alb.ingress.kubernetes.io/ssl-redirect: "443"
+          external-dns.alpha.kubernetes.io/hostname: "loki.{{ domain_name }}"
+      spec:
+        rules:
+          - host: "loki.{{ domain_name }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: loki
+                      port:
+                        number: 3100

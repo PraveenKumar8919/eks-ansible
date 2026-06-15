@@ -7,15 +7,28 @@ on:
   workflow_dispatch:
     inputs:
       loki_iam_role_arn:
-        description: "Loki IAM role ARN (leave blank to read from eks-infra state)"
+        description: "Loki IAM role ARN"
         required: false
       loki_s3_bucket:
-        description: "Loki S3 bucket (leave blank to read from eks-infra state)"
+        description: "Loki S3 bucket name"
+        required: false
+      acm_certificate_arn:
+        description: "ACM wildcard certificate ARN"
+        required: false
+      alb_controller_iam_role_arn:
+        description: "ALB controller IAM role ARN"
+        required: false
+      externaldns_iam_role_arn:
+        description: "ExternalDNS IAM role ARN"
+        required: false
+      vpc_id:
+        description: "VPC ID"
         required: false
 
 env:
   AWS_REGION:   us-east-1
   CLUSTER_NAME: eks-test-cluster
+  ANSIBLE_DIR:  .
 
 jobs:
   deploy:
@@ -33,37 +46,45 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform (to read eks-infra outputs)
+      - name: Setup Terraform (to read eks-infra state)
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
 
-      - name: Read eks-infra Terraform outputs
-        id: tf_outputs
+      - name: Read outputs from eks-infra Terraform state
+        id: tf
         run: |
-          # Use workflow inputs if provided, otherwise pull from eks-infra S3 state
-          LOKI_ARN="${{ inputs.loki_iam_role_arn }}"
-          LOKI_BUCKET="${{ inputs.loki_s3_bucket }}"
+          # Use workflow inputs if provided, otherwise pull from S3 state
+          get_output() {
+            local input_val="$1"
+            local output_key="$2"
+            if [ -n "$input_val" ]; then
+              echo "$input_val"
+            else
+              terraform -chdir=/tmp/tfread output -raw "$output_key" 2>/dev/null || echo ""
+            fi
+          }
 
-          if [ -z "$LOKI_ARN" ]; then
-            cat > /tmp/backend.tf <<EOF
+          # Init a minimal Terraform config pointing at the eks-infra state
+          mkdir -p /tmp/tfread
+          cat > /tmp/tfread/main.tf <<EOF
           terraform {
             backend "s3" {
               bucket       = "${{ secrets.TF_STATE_BUCKET }}"
               key          = "eks-infra/state.tfstate"
-              region       = "us-east-1"
+              region       = "${{ env.AWS_REGION }}"
               use_lockfile = true
             }
           }
           EOF
-            mkdir /tmp/tfread && cp /tmp/backend.tf /tmp/tfread/
-            terraform -chdir=/tmp/tfread init -reconfigure
-            LOKI_ARN=$(terraform -chdir=/tmp/tfread output -raw loki_iam_role_arn 2>/dev/null || echo "")
-            LOKI_BUCKET=$(terraform -chdir=/tmp/tfread output -raw loki_s3_bucket 2>/dev/null || echo "")
-          fi
+          terraform -chdir=/tmp/tfread init -reconfigure
 
-          echo "loki_iam_role_arn=$LOKI_ARN"   >> $GITHUB_OUTPUT
-          echo "loki_s3_bucket=$LOKI_BUCKET"   >> $GITHUB_OUTPUT
+          echo "LOKI_IAM_ROLE_ARN=$(get_output '${{ inputs.loki_iam_role_arn }}' loki_iam_role_arn)"         >> $GITHUB_OUTPUT
+          echo "LOKI_S3_BUCKET=$(get_output '${{ inputs.loki_s3_bucket }}' loki_s3_bucket)"                  >> $GITHUB_OUTPUT
+          echo "ACM_CERT_ARN=$(get_output '${{ inputs.acm_certificate_arn }}' acm_certificate_arn)"          >> $GITHUB_OUTPUT
+          echo "ALB_CONTROLLER_ROLE_ARN=$(get_output '${{ inputs.alb_controller_iam_role_arn }}' alb_controller_iam_role_arn)" >> $GITHUB_OUTPUT
+          echo "EXTERNALDNS_ROLE_ARN=$(get_output '${{ inputs.externaldns_iam_role_arn }}' externaldns_iam_role_arn)"         >> $GITHUB_OUTPUT
+          echo "VPC_ID=$(get_output '${{ inputs.vpc_id }}' vpc_id)"                                          >> $GITHUB_OUTPUT
 
       - name: Install Helm
         uses: azure/setup-helm@v4
@@ -78,22 +99,25 @@ jobs:
 
       - name: Deploy observability stack
         env:
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          LOKI_S3_BUCKET: ${{ steps.tf_outputs.outputs.loki_s3_bucket }}
+          GRAFANA_ADMIN_PASSWORD:  ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          LOKI_S3_BUCKET:          ${{ steps.tf.outputs.LOKI_S3_BUCKET }}
+          VPC_ID:                  ${{ steps.tf.outputs.VPC_ID }}
+          ACM_CERT_ARN:            ${{ steps.tf.outputs.ACM_CERT_ARN }}
+          ALB_CONTROLLER_ROLE_ARN: ${{ steps.tf.outputs.ALB_CONTROLLER_ROLE_ARN }}
+          EXTERNALDNS_ROLE_ARN:    ${{ steps.tf.outputs.EXTERNALDNS_ROLE_ARN }}
         run: |
           ansible-playbook playbooks/observability.yml \
-            -e "loki_iam_role_arn=${{ steps.tf_outputs.outputs.loki_iam_role_arn }}" \
-            -e "loki_s3_bucket=${{ steps.tf_outputs.outputs.loki_s3_bucket }}"
+            -e "loki_iam_role_arn=${{ steps.tf.outputs.LOKI_IAM_ROLE_ARN }}"
 
       - name: Deploy Roboshop
         run: ansible-playbook playbooks/roboshop.yml
 
       - name: Print access URLs
         run: |
-          echo "=== Grafana ==="
-          kubectl get svc -n grafana kube-prometheus-stack-grafana \
-            -o jsonpath='http://{.status.loadBalancer.ingress[0].hostname}{"\n"}'
-          echo "Credentials: admin / Roboshop@123"
+          echo "=== Access URLs ==="
+          echo "Grafana:    https://grafana.devopswithpraveen.online"
+          echo "Prometheus: https://prometheus.devopswithpraveen.online"
+          echo "Loki:       https://loki.devopswithpraveen.online"
           echo ""
           echo "=== Roboshop ==="
           kubectl get svc -n roboshop web \

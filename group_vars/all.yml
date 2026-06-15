@@ -8,13 +8,19 @@ grafana_namespace:    grafana
 monitoring_namespace: monitoring
 roboshop_namespace:   roboshop
 
+# Domain
+domain_name: devopswithpraveen.online
+
 # Grafana
 grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('changeme', true) }}"
 
-# Loki S3 — set by GitHub Actions from terraform output
-# Override locally: ansible-playbook -e "loki_s3_bucket=<bucket> loki_iam_role_arn=<arn>"
-loki_s3_bucket:    "{{ lookup('env', 'LOKI_S3_BUCKET') | default('', true) }}"
-loki_iam_role_arn: ""   # injected at runtime from terraform output
+# Injected at runtime from terraform outputs (via GitHub Actions or -e flag locally)
+loki_s3_bucket:             "{{ lookup('env', 'LOKI_S3_BUCKET') | default('', true) }}"
+loki_iam_role_arn:          ""
+vpc_id:                     "{{ lookup('env', 'VPC_ID') | default('', true) }}"
+acm_certificate_arn:        "{{ lookup('env', 'ACM_CERT_ARN') | default('', true) }}"
+alb_controller_iam_role_arn: "{{ lookup('env', 'ALB_CONTROLLER_ROLE_ARN') | default('', true) }}"
+externaldns_iam_role_arn:   "{{ lookup('env', 'EXTERNALDNS_ROLE_ARN') | default('', true) }}"
 
 # Roboshop image tags
 roboshop_images:

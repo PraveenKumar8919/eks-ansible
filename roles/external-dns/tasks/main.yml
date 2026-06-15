@@ -1,0 +1,28 @@
+---
+- name: Add ExternalDNS Helm repo
+  kubernetes.core.helm_repository:
+    name: external-dns
+    repo_url: https://kubernetes-sigs.github.io/external-dns/
+
+- name: Install ExternalDNS
+  kubernetes.core.helm:
+    name: external-dns
+    chart_ref: external-dns/external-dns
+    release_namespace: kube-system
+    create_namespace: false
+    wait: true
+    timeout: "5m"
+    values:
+      provider:
+        name: aws
+      aws:
+        region: "{{ aws_region }}"
+      serviceAccount:
+        create: true
+        name: external-dns
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ externaldns_iam_role_arn }}"
+      domainFilters:
+        - "{{ domain_name }}"
+      policy: sync
+      txtOwnerId: "{{ cluster_name }}"
