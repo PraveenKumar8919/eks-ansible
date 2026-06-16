@@ -10,8 +10,11 @@ This repo handles **application deployments only**. The cluster infrastructure i
 
 ```
 Kubernetes Cluster
+├── kube-system namespace
+│   ├── AWS Load Balancer Controller  ← creates ALB from Ingress resources
+│   └── ExternalDNS                   ← auto-creates Route 53 records from Ingress
 ├── loki-live namespace
-│   └── Loki              ← log aggregation, stores logs in S3
+│   └── Loki              ← log aggregation, stores logs in S3 (via IRSA)
 ├── grafana namespace
 │   ├── Prometheus        ← metrics collection and storage
 │   ├── Grafana           ← dashboards (Prometheus + Loki pre-wired)
@@ -32,9 +35,13 @@ EKS Nodes
         ├── collects pod logs      → Loki  (loki-live ns)
         └── scrapes pod metrics    → Prometheus (grafana ns)
 
-Grafana (LoadBalancer)
-  ├── data source: Prometheus  ← metrics dashboards
-  └── data source: Loki        ← log exploration (LogQL)
+ALB (single load balancer, shared across all subdomains)
+  ├── grafana.devopswithpraveen.online     → Grafana
+  ├── prometheus.devopswithpraveen.online  → Prometheus
+  └── loki.devopswithpraveen.online        → Loki
+
+ExternalDNS
+  └── reads Ingress annotations → creates Route 53 A records automatically
 
 Loki
   └── stores logs in S3 (via IRSA — no AWS credentials needed)
@@ -68,23 +75,45 @@ ansible-galaxy collection install kubernetes.core
 
 ```
 eks-ansible/
-├── .github/workflows/config.yml        # GitHub Actions — runs ansible-playbook on push
-├── ansible.cfg                          # Ansible configuration
+├── .github/workflows/
+│   ├── config.yml                           # GitHub Actions — ansible-playbook on push
+│   └── security-scan.yml                    # Trivy secret + IaC misconfiguration scan
+├── ansible.cfg                              # Ansible configuration
 ├── group_vars/
-│   └── all.yml                          # All variables (namespaces, image tags, etc.)
+│   ├── all.yml                              # Variables (namespaces, image tags, etc.)
+│   ├── vault.yml                            # Ansible Vault — encrypted secrets (safe to commit)
+│   └── vault.yml.example                    # Template for creating vault.yml
 ├── playbooks/
-│   ├── observability.yml                # Deploys: Loki → Prometheus/Grafana → Alloy
-│   └── roboshop.yml                     # Deploys: Roboshop app
+│   ├── observability.yml                    # Deploys: ALB → ExternalDNS → Loki → Prometheus → Alloy
+│   └── roboshop.yml                         # Deploys: Roboshop app
 └── roles/
-    ├── loki/tasks/main.yml              # Helm install Loki
-    ├── prometheus/tasks/main.yml        # Helm install kube-prometheus-stack
+    ├── aws-load-balancer-controller/        # Helm install ALB controller
+    ├── external-dns/                        # Helm install ExternalDNS
+    ├── loki/tasks/main.yml                  # Helm install Loki + Ingress
+    ├── prometheus/tasks/main.yml            # Helm install kube-prometheus-stack + Ingress
     ├── alloy/
-    │   ├── tasks/main.yml               # Helm install Alloy
-    │   └── files/alloy-config.alloy     # Alloy pipeline config (River format)
+    │   ├── tasks/main.yml                   # Helm install Alloy
+    │   └── files/alloy-config.alloy         # Alloy pipeline config (River format)
     └── roboshop/
-        ├── tasks/main.yml               # Helm install Roboshop
-        └── files/helm/roboshop/         # Local Helm chart for Roboshop
+        ├── tasks/main.yml                   # Helm install Roboshop
+        └── files/helm/roboshop/             # Local Helm chart for Roboshop
 ```
+
+---
+
+## Secrets management (Ansible Vault)
+
+All passwords are stored in `group_vars/vault.yml`, encrypted with Ansible Vault AES256. The file is safe to commit — nobody can read it without the vault password.
+
+To create your own vault file:
+```bash
+cp group_vars/vault.yml.example group_vars/vault.yml.plain
+# Edit vault.yml.plain with your passwords
+ansible-vault encrypt group_vars/vault.yml.plain --output group_vars/vault.yml
+rm group_vars/vault.yml.plain
+```
+
+The vault password is stored as the GitHub secret `ANSIBLE_VAULT_PASSWORD`.
 
 ---
 
@@ -99,35 +128,37 @@ cd eks-ansible
 aws eks update-kubeconfig --name eks-test-cluster --region us-east-1
 ```
 
-**2. Get the Loki IAM role ARN from Terraform outputs**
+**2. Set environment variables from eks-infra outputs**
 ```bash
 # From the eks-infra directory
-terraform output loki_iam_role_arn
-terraform output loki_s3_bucket
+export LOKI_IAM_ROLE_ARN=$(terraform output -raw loki_iam_role_arn)
+export LOKI_S3_BUCKET=$(terraform output -raw loki_s3_bucket)
+export ACM_CERT_ARN=$(terraform output -raw acm_certificate_arn)
+export ALB_CONTROLLER_ROLE_ARN=$(terraform output -raw alb_controller_iam_role_arn)
+export EXTERNALDNS_ROLE_ARN=$(terraform output -raw externaldns_iam_role_arn)
+export VPC_ID=$(terraform output -raw vpc_id)
 ```
 
 **3. Deploy the observability stack**
 ```bash
-export GRAFANA_ADMIN_PASSWORD="your-grafana-password"
-
 ansible-playbook playbooks/observability.yml \
-  -e "loki_iam_role_arn=<arn-from-step-2>" \
-  -e "loki_s3_bucket=<bucket-from-step-2>"
+  --vault-password-file /path/to/.vault_pass \
+  -e "loki_iam_role_arn=$LOKI_IAM_ROLE_ARN"
 ```
 
 **4. Deploy Roboshop**
 ```bash
-ansible-playbook playbooks/roboshop.yml
+ansible-playbook playbooks/roboshop.yml \
+  --vault-password-file /path/to/.vault_pass
 ```
 
-**5. Get access URLs**
-```bash
-# Grafana
-kubectl get svc -n grafana kube-prometheus-stack-grafana
+**5. Access the stack**
 
-# Roboshop
-kubectl get svc -n roboshop web
-```
+| Service | URL |
+|---------|-----|
+| Grafana | https://grafana.devopswithpraveen.online |
+| Prometheus | https://prometheus.devopswithpraveen.online |
+| Loki | https://loki.devopswithpraveen.online |
 
 ---
 
@@ -138,19 +169,21 @@ The workflow at `.github/workflows/config.yml` runs automatically on every push 
 ```
 Push to main
      ↓
-Update kubeconfig (aws eks update-kubeconfig)
+Configure AWS credentials
      ↓
-Read loki_iam_role_arn + loki_s3_bucket from eks-infra Terraform state (S3)
+Read Terraform outputs from eks-infra S3 state
      ↓
 ansible-playbook observability.yml
-  → helm install loki            (namespace: loki-live)
-  → helm install kube-prometheus-stack  (namespace: grafana)
-  → helm install alloy           (namespace: monitoring)
+  → helm install aws-load-balancer-controller  (namespace: kube-system)
+  → helm install external-dns                  (namespace: kube-system)
+  → helm install loki                          (namespace: loki-live)
+  → helm install kube-prometheus-stack         (namespace: grafana)
+  → helm install alloy                         (namespace: monitoring)
      ↓
 ansible-playbook roboshop.yml
-  → helm install roboshop        (namespace: roboshop)
+  → helm install roboshop                      (namespace: roboshop)
      ↓
-Print Grafana and Roboshop URLs
+Print access URLs
 ```
 
 ### Required GitHub secrets
@@ -162,21 +195,19 @@ Go to **Settings → Secrets and variables → Actions** and add:
 | `AWS_ACCESS_KEY_ID` | AWS IAM user access key |
 | `AWS_SECRET_ACCESS_KEY` | AWS IAM user secret key |
 | `TF_STATE_BUCKET` | S3 bucket where eks-infra Terraform state is stored |
-| `GRAFANA_ADMIN_PASSWORD` | Password you want to set for Grafana admin login |
+| `ANSIBLE_VAULT_PASSWORD` | Password to decrypt group_vars/vault.yml |
 
 ---
 
 ## Grafana access
 
-After deployment, get the Grafana URL:
-```bash
-kubectl get svc -n grafana kube-prometheus-stack-grafana \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-```
+After deployment, Grafana is available at:
+
+**https://grafana.devopswithpraveen.online**
 
 Login with:
 - **Username:** `admin`
-- **Password:** value of your `GRAFANA_ADMIN_PASSWORD` secret
+- **Password:** value of `vault_grafana_admin_password` in your vault
 
 Both **Prometheus** and **Loki** data sources are pre-configured — no manual setup needed in Grafana.
 
