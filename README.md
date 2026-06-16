@@ -164,7 +164,7 @@ ansible-playbook playbooks/roboshop.yml \
 
 ## GitHub Actions (CI/CD)
 
-The workflow at `.github/workflows/config.yml` runs automatically on every push to `main`.
+The workflow at `.github/workflows/config.yml` is triggered manually from **Actions → EKS Configuration → Run workflow**. Run it after `eks-infra` has been applied and the cluster is up.
 
 ```
 Push to main
