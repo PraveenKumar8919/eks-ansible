@@ -11,7 +11,7 @@
     release_namespace: "{{ loki_namespace }}"
     create_namespace: true
     wait: true
-    timeout: "5m"
+    timeout: "10m"
     values:
       deploymentMode: SingleBinary
 
@@ -49,6 +49,9 @@
       write:   { replicas: 0 }
       backend: { replicas: 0 }
       minio:   { enabled: false }
+
+      chunksCache:  { enabled: false }
+      resultsCache: { enabled: false }
 
 - name: Create Loki Ingress
   kubernetes.core.k8s:
