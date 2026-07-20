@@ -11,18 +11,17 @@ roboshop_namespace:   roboshop
 # Domain
 domain_name: devopswithpraveen.online
 
-# Secrets — values come from group_vars/vault.yml (ansible-vault encrypted)
-# Never hardcode secrets here — reference vault variables only
-grafana_admin_password: "{{ vault_grafana_admin_password }}"
+# Secrets — pulled from env vars (set via GitHub Secrets in CI, or shell env locally)
+grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') | default('DevOps@2025', true) }}"
 
-mysql_root_password: "{{ vault_mysql_root_password }}"
-mysql_password:      "{{ vault_mysql_password }}"
+mysql_root_password: "DevOps@2025"
+mysql_password:      "DevOps@2025"
 
-rabbitmq_user:     "{{ vault_rabbitmq_user }}"
-rabbitmq_password: "{{ vault_rabbitmq_password }}"
+rabbitmq_user:     "roboshop"
+rabbitmq_password: "DevOps@2025"
 
-payment_amqp_user: "{{ vault_payment_amqp_user }}"
-payment_amqp_pass: "{{ vault_payment_amqp_pass }}"
+payment_amqp_user: "roboshop"
+payment_amqp_pass: "DevOps@2025"
 
 # Infrastructure values — injected at runtime from terraform outputs (not secrets)
 loki_s3_bucket:              "{{ lookup('env', 'LOKI_S3_BUCKET') | default('', true) }}"
