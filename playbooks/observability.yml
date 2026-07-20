@@ -4,6 +4,17 @@
   connection: local
   gather_facts: false
 
+  pre_tasks:
+    - name: Set gp2 as default StorageClass
+      kubernetes.core.k8s:
+        state: patched
+        kind: StorageClass
+        name: gp2
+        definition:
+          metadata:
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "true"
+
   roles:
     - role: aws-load-balancer-controller  # must run first — creates the ALB
     - role: external-dns                  # watches Ingress, creates Route 53 records
