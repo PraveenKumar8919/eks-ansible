@@ -109,7 +109,7 @@ kubectl get storageclass
 
 **Fix — two parts:**
 
-1. One-time cluster patch:
+1. One-time cluster patch (only needed if Loki was already deployed without the pre_task):
 ```bash
 kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 kubectl delete pvc storage-loki-0 -n loki-live   # delete stale unbound PVC
@@ -215,6 +215,54 @@ loki-live     loki-0                    2/2   Running
 monitoring    alloy-*                   2/2   Running  (x2 nodes)
 roboshop      catalogue, cart, user...  1/1   Running  (10 services)
 ```
+
+---
+
+---
+
+## Issue 7 — Subnet `DependencyViolation` during `terraform destroy`
+
+**Symptom:**
+```
+Error: deleting EC2 Subnet (subnet-xxx): DependencyViolation: The subnet has dependencies and cannot be deleted.
+```
+`terraform destroy` hangs for hours then fails. Subnets cannot be deleted.
+
+**Root Cause:**
+The ALB controller creates ALBs in response to Kubernetes Ingress objects. These ALBs are **not managed by Terraform** — Terraform has no record of them and cannot delete them. When `terraform destroy` tries to remove the VPC subnets, AWS rejects it because the ALB's ENIs are still attached to those subnets.
+
+**Fix — always delete ALBs before `terraform destroy`:**
+
+```bash
+# Step 1: Delete all Kubernetes ingresses (ALB controller will remove the ALBs)
+kubectl delete ingress --all -A
+
+# Step 2: Wait for ALBs to be gone
+until [ $(aws elbv2 describe-load-balancers --query 'length(LoadBalancers)' --output text) -eq 0 ]; do
+  echo "Waiting for ALBs to delete..."; sleep 10
+done
+echo "ALBs deleted — safe to run terraform destroy"
+
+# Step 3: Now run terraform destroy
+terraform destroy -var="loki_s3_bucket=ppattirik-loki-logs" -var="create_nat_gateway=true"
+```
+
+If you already ran `terraform destroy` and it failed with DependencyViolation:
+```bash
+# Delete ALBs directly via AWS CLI
+aws elbv2 describe-load-balancers --query 'LoadBalancers[*].[LoadBalancerArn,LoadBalancerName]' --output table
+aws elbv2 delete-load-balancer --load-balancer-arn <arn>
+
+# Force-unlock stale state lock (from the killed terraform process)
+terraform force-unlock -force <lock-id>
+
+# Re-run destroy
+terraform destroy -var="loki_s3_bucket=ppattirik-loki-logs" -var="create_nat_gateway=true"
+```
+
+> **Permanent fix implemented:** `cleanup.tf` in eks-infra contains a `null_resource` with a `when = destroy` provisioner. It has `depends_on = [module.vpc, module.eks]` so it is destroyed FIRST (reverse dependency order), running the cleanup automatically before Terraform touches any subnets. Just run `terraform destroy` normally — no manual pre-steps needed.
+>
+> `destroy.sh` exists as a last resort if the provisioner fails — it does the full cleanup manually then runs terraform destroy and recreates the VPC.
 
 ---
 
